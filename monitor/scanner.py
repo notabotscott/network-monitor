@@ -194,20 +194,31 @@ class Scanner:
         ip -> HostState for every live host discovered.
         """
         combined = " ".join(targets)
+
+        # "top-N" is not a valid nmap -p argument; translate to --top-ports N
+        # and pass it in arguments instead.
+        ports_arg = self._cfg.nmap_ports
+        extra_args = self._cfg.nmap_arguments
+        import re as _re
+        _top = _re.fullmatch(r"top-(\d+)", ports_arg.strip(), _re.IGNORECASE)
+        if _top:
+            extra_args = f"{extra_args} --top-ports {_top.group(1)}"
+            ports_arg = None  # type: ignore[assignment]
+
         logger.info(
             "Starting nmap scan",
             extra={
                 "target": combined,
                 "ports": self._cfg.nmap_ports,
-                "nmap_args": self._cfg.nmap_arguments,
+                "nmap_args": extra_args,
             },
         )
 
         try:
             self._nm.scan(
                 hosts=combined,
-                ports=self._cfg.nmap_ports,
-                arguments=self._cfg.nmap_arguments,
+                ports=ports_arg,
+                arguments=extra_args,
                 sudo=self._cfg.nmap_sudo,
             )
         except nmap.PortScannerError as exc:

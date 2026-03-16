@@ -1,0 +1,69 @@
+# Network Monitor — example configuration
+# Load with: CONFIG_FILE=/path/to/this/file
+# Environment variables always override values here.
+
+targets:
+  - 203.0.113.0/28       # example: a small public subnet
+  - 198.51.100.10        # example: a specific public IP
+  - example.com          # example: FQDN (resolved to IP at scan time)
+
+# ---- nmap ----------------------------------------------------------------
+# -sV: version detection
+# --open: only report open ports (suppresses closed/filtered noise)
+# -T4: aggressive timing (fast; use -T3 on flaky networks)
+# Append --script=banner to also grab raw service banners
+nmap_arguments: "-sV --open -T4"
+
+# Port scope. Options:
+#   "top-1000"        — nmap's top 1000 most common ports (fast, good coverage)
+#   "1-65535"         — full port scan (slow: ~15 min per host)
+#   "21,22,25,80,443,8080,8443"  — explicit list
+nmap_ports: "top-1000"
+
+# Set true only when the container has CAP_NET_RAW (SYN scan is faster)
+nmap_sudo: false
+
+# ---- HTTP probing --------------------------------------------------------
+http_timeout: 10
+http_follow_redirects: true
+http_max_redirects: 3
+http_user_agent: "NetworkMonitor/1.0"
+
+# Headers to track for changes. "_status_code" is always captured.
+http_headers_of_interest:
+  - Server
+  - X-Powered-By
+  - X-AspNet-Version
+  - X-Generator
+  - Via
+  - X-Varnish
+  - Strict-Transport-Security
+  - Content-Security-Policy
+  - X-Frame-Options
+  - X-Content-Type-Options
+
+# ---- State storage -------------------------------------------------------
+# "local": JSON files on disk (use a persistent volume or GCS FUSE mount)
+# "gcs":   Google Cloud Storage bucket (recommended for Cloud Run)
+state_backend: local
+state_local_dir: /data/state
+
+# GCS backend (uncomment to use):
+# state_backend: gcs
+# state_gcs_bucket: my-org-network-monitor
+# state_gcs_prefix: state/prod
+
+# ---- Logging & alerting --------------------------------------------------
+log_level: INFO         # DEBUG | INFO | WARNING | ERROR
+log_changes_only: false  # true = suppress "no changes" INFO lines
+
+# Minimum severity to emit as a log record.
+# PORT_OPENED and HOST_DOWN are "critical"; new services are "warning"; version
+# changes and HTTP header changes are "info".
+alert_min_severity: info   # info | warning | critical
+
+# ---- Run mode ------------------------------------------------------------
+# "job":     Single-shot. Exit 0 on success. Use with Cloud Run Jobs + Cloud Scheduler.
+# "service": Internal loop. Use with Cloud Run Service (set min-instances=1).
+run_mode: job
+scan_interval_seconds: 3600  # only used when run_mode=service

@@ -1,0 +1,7 @@
+python-nmap==0.7.1
+requests==2.31.0
+pyyaml==6.0.1
+dnspython==2.7.0
+psycopg2-binary==2.9.10
+google-cloud-storage==2.16.0
+urllib3==2.2.1

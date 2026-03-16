@@ -239,6 +239,9 @@ class _Conn:
     def commit(self) -> None:
         self._conn.commit()
 
+    def rollback(self) -> None:
+        self._conn.rollback()
+
     def close(self) -> None:
         self._conn.close()
 
@@ -294,7 +297,7 @@ class Database:
                 self._conn.commit()
                 logger.info("Migration: added client_id to %s", table)
             except Exception:
-                pass  # column already exists
+                self._conn.rollback()  # required for PostgreSQL — aborted txn must be rolled back
 
     # ------------------------------------------------------------------
     # Write — scanner
@@ -328,7 +331,7 @@ class Database:
             "INSERT INTO host_snapshots (client_id, scan_id, scanned_at, ip, hostnames, is_up) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             (self._cid, scan_id, _now_iso(), host.ip,
-             json.dumps(host.hostnames), int(host.is_up)),
+             json.dumps(host.hostnames), bool(host.is_up)),
         )
         self._conn.executemany(
             "INSERT INTO port_snapshots "
@@ -353,7 +356,7 @@ class Database:
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (self._cid, scan_id, _now_iso(), record.fqdn,
              json.dumps(record.a_records), json.dumps(record.aaaa_records),
-             record.cname, record.ttl, int(record.resolution_failed)),
+             record.cname, record.ttl, bool(record.resolution_failed)),
         )
         self._conn.commit()
 

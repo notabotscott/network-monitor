@@ -199,7 +199,7 @@ class Scanner:
             extra={
                 "target": combined,
                 "ports": self._cfg.nmap_ports,
-                "args": self._cfg.nmap_arguments,
+                "nmap_args": self._cfg.nmap_arguments,
             },
         )
 

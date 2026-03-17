@@ -24,7 +24,7 @@ import json
 import logging
 import sqlite3
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from .dns import DnsRecord
@@ -512,6 +512,58 @@ class Database:
             a_records=json.loads(a_json), aaaa_records=json.loads(aaaa_json),
             cname=cname, ttl=ttl, resolution_failed=bool(failed),
         )
+
+    def count_live_hosts_in_scan(self, scan_id: int) -> int:
+        """Return the number of live hosts recorded in a scan."""
+        row = self._conn.fetchone(
+            "SELECT COUNT(*) FROM host_snapshots WHERE client_id=? AND scan_id=? AND is_up=?",
+            (self._cid, scan_id, True),
+        )
+        return row[0] if row else 0
+
+    def get_previous_completed_scan_id(self, before_scan_id: int) -> Optional[int]:
+        """Most recent completed scan_id strictly before before_scan_id."""
+        row = self._conn.fetchone(
+            "SELECT id FROM scans WHERE client_id=? AND status='completed' AND id<? "
+            "ORDER BY id DESC LIMIT 1",
+            (self._cid, before_scan_id),
+        )
+        return row[0] if row else None
+
+    def purge_old_scans(self, retain_days: int = 90) -> int:
+        """
+        Delete completed scans older than retain_days and all their child rows.
+        Returns the number of scans deleted.
+        """
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=retain_days)).isoformat()
+        old_ids = [
+            row[0] for row in self._conn.fetchall(
+                "SELECT id FROM scans WHERE client_id=? AND status='completed' AND completed_at<?",
+                (self._cid, cutoff),
+            )
+        ]
+        if not old_ids:
+            return 0
+
+        ph = ",".join("?" * len(old_ids))
+        host_ids = [
+            row[0] for row in self._conn.fetchall(
+                f"SELECT id FROM host_snapshots WHERE scan_id IN ({ph})", tuple(old_ids)
+            )
+        ]
+        if host_ids:
+            hph = ",".join("?" * len(host_ids))
+            self._conn.execute(f"DELETE FROM port_snapshots WHERE host_snapshot_id IN ({hph})", tuple(host_ids))
+            self._conn.execute(f"DELETE FROM http_snapshots  WHERE host_snapshot_id IN ({hph})", tuple(host_ids))
+
+        self._conn.execute(f"DELETE FROM host_snapshots WHERE scan_id IN ({ph})", tuple(old_ids))
+        self._conn.execute(f"DELETE FROM dns_snapshots  WHERE scan_id IN ({ph})", tuple(old_ids))
+        self._conn.execute(f"DELETE FROM change_events  WHERE scan_id IN ({ph})", tuple(old_ids))
+        self._conn.execute(f"DELETE FROM scans          WHERE id IN ({ph})",      tuple(old_ids))
+        self._conn.commit()
+        logger.info("Purged %d old scan(s) older than %d days", len(old_ids), retain_days,
+                    extra={"client_id": self._cid})
+        return len(old_ids)
 
     def close(self) -> None:
         self._conn.close()

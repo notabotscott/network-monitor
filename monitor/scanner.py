@@ -199,8 +199,7 @@ class Scanner:
         # and pass it in arguments instead.
         ports_arg = self._cfg.nmap_ports
         extra_args = self._cfg.nmap_arguments
-        import re as _re
-        _top = _re.fullmatch(r"top-(\d+)", ports_arg.strip(), _re.IGNORECASE)
+        _top = re.fullmatch(r"top-(\d+)", ports_arg.strip(), re.IGNORECASE)
         if _top:
             extra_args = f"{extra_args} --top-ports {_top.group(1)}"
             ports_arg = None  # type: ignore[assignment]

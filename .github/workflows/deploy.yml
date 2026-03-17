@@ -3,6 +3,11 @@ name: Deploy
 on:
   push:
     branches: [master]
+    paths:
+      - Dockerfile
+      - requirements.txt
+      - monitor/**
+      - slack-notifier/**
 
 env:
   PROJECT: internal-automation-385014

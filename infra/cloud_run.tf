@@ -5,7 +5,7 @@ resource "google_cloud_run_v2_job" "monitor" {
   template {
     template {
       service_account       = google_service_account.monitor.email
-      timeout               = "1800s"
+      timeout               = "3600s"
       max_retries           = 0
       execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
 
@@ -47,7 +47,11 @@ resource "google_cloud_run_v2_job" "monitor" {
         }
         env {
           name  = "MONITOR_NMAP_PORTS"
-          value = "top-1000"
+          value = "1-65535"
+        }
+        env {
+          name  = "GCP_REGION"
+          value = var.region
         }
         env {
           name = "DATABASE_URL"

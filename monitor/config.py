@@ -13,8 +13,8 @@ class Config:
     targets: List[str]
 
     # nmap options
-    nmap_arguments: str = "-sV --open -T4"
-    nmap_ports: str = "top-1000"
+    nmap_arguments: str = "-sV --open -T4 -Pn"
+    nmap_ports: str = "1-65535"
     nmap_sudo: bool = False  # True enables SYN scan (-sS) but needs CAP_NET_RAW
 
     # HTTP probing

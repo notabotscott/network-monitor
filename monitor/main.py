@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import signal
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Set  # noqa: F401
+
+import requests as _requests
 
 from .config import Config, load_all_configs
 from .db import Database
@@ -216,8 +219,8 @@ def _check_scan_suspicious(cfg: Config, db: Database, scan_id: int) -> None:
 
 
 def _run_client(client: dict) -> None:
-    cfg    = client["config"]
-    db     = client["db"]
+    cfg      = client["config"]
+    db       = client["db"]
     scanner  = client["scanner"]
     resolver = client["resolver"]
     differ   = client["differ"]
@@ -237,6 +240,61 @@ def _run_client(client: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Cloud Run task dispatch
+# ---------------------------------------------------------------------------
+
+def _dispatch_clients(job_name: str, project: str, region: str, n_clients: int) -> None:
+    """
+    Re-invoke this Cloud Run Job with one parallel task per client.
+
+    Cloud Scheduler always triggers with taskCount=1. When there are multiple
+    clients configured, the first task calls this to fan out: it triggers a new
+    execution with taskCount=N so each client gets its own isolated task (and
+    its own full timeout budget), then exits immediately.
+
+    Each worker task receives CLOUD_RUN_TASK_INDEX and runs only configs[index].
+    """
+    import google.auth
+    import google.auth.transport.requests as ga_transport
+
+    creds, _ = google.auth.default(
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+    creds.refresh(ga_transport.Request())
+
+    url = (
+        f"https://run.googleapis.com/v2/"
+        f"projects/{project}/locations/{region}/jobs/{job_name}:run"
+    )
+    resp = _requests.post(
+        url,
+        json={"overrides": {"taskCount": n_clients}},
+        headers={"Authorization": f"Bearer {creds.token}"},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    execution = resp.json().get("name", "")
+    logger.info(
+        "Dispatched %d parallel client tasks",
+        n_clients,
+        extra={"execution": execution, "job": job_name, "task_count": n_clients},
+    )
+
+
+def _gcs_prefix_for(cfg: Config, n_total_clients: int) -> str:
+    """
+    Return the GCS object prefix for this client's SQLite file.
+
+    When multiple clients are dispatched as parallel tasks, each needs its own
+    isolated GCS path to avoid generation-match conflicts on concurrent uploads.
+    Single-client deployments use the bare prefix (backward compatible).
+    """
+    if n_total_clients > 1:
+        return f"{cfg.state_gcs_prefix.rstrip('/')}/{cfg.client_id}"
+    return cfg.state_gcs_prefix
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -250,8 +308,54 @@ def _handle_sigterm(signum, frame) -> None:
 
 
 def main() -> None:
-    configs = load_all_configs()
-    _setup_logging(configs[0].log_level)
+    all_configs = load_all_configs()
+    _setup_logging(all_configs[0].log_level)
+
+    # ------------------------------------------------------------------
+    # Cloud Run task parallelism: one task per client
+    #
+    # Cloud Scheduler always triggers with taskCount=1. If we have N clients
+    # and we're that first single task, dispatch N tasks then exit. Each
+    # worker task picks up configs[CLOUD_RUN_TASK_INDEX] and runs it alone.
+    # Outside Cloud Run (local, service mode) this block is a no-op.
+    # ------------------------------------------------------------------
+    task_index = int(os.environ.get("CLOUD_RUN_TASK_INDEX", "0"))
+    task_count = int(os.environ.get("CLOUD_RUN_TASK_COUNT", "1"))
+    job_name   = os.environ.get("CLOUD_RUN_JOB", "")
+    project    = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
+    region     = os.environ.get("GCP_REGION", "")
+
+    n_clients = len(all_configs)
+
+    if (
+        n_clients > 1
+        and all_configs[0].run_mode == "job"
+        and task_count == 1
+        and job_name and project and region
+    ):
+        logger.info(
+            "Dispatcher: fanning out %d clients as parallel tasks",
+            n_clients,
+            extra={"clients": [c.client_id for c in all_configs]},
+        )
+        _dispatch_clients(job_name, project, region, n_clients)
+        sys.exit(0)
+
+    # Select this task's client (single-client: always index 0)
+    if n_clients > 1:
+        if task_index >= n_clients:
+            logger.error(
+                "CLOUD_RUN_TASK_INDEX=%d but only %d clients configured — nothing to do",
+                task_index, n_clients,
+            )
+            sys.exit(0)
+        configs = [all_configs[task_index]]
+        logger.info(
+            "Worker task %d/%d — client=%s",
+            task_index, n_clients, configs[0].client_id,
+        )
+    else:
+        configs = all_configs
 
     logger.info(
         "Network monitor starting",
@@ -272,16 +376,17 @@ def main() -> None:
             },
         )
 
-    # GCS-backed SQLite: download once at startup, upload once at the end.
-    # All clients share the same file (data is isolated by client_id).
+    # GCS-backed SQLite: each client uses an isolated path so parallel tasks
+    # don't race on the same GCS object. Single-client uses the bare prefix.
     gcs_generation = None
     cfg0 = configs[0]
+    gcs_prefix = _gcs_prefix_for(cfg0, n_clients)
     if cfg0.state_backend == "gcs":
         if not cfg0.state_gcs_bucket:
             raise ValueError("state_backend=gcs requires state_gcs_bucket to be set")
         from . import gcs_backend
         local_db = "/tmp/monitor.db"
-        gcs_generation = gcs_backend.download(cfg0.state_gcs_bucket, cfg0.state_gcs_prefix, local_db)
+        gcs_generation = gcs_backend.download(cfg0.state_gcs_bucket, gcs_prefix, local_db)
         sqlite_url = f"sqlite:///{local_db}"
         for cfg in configs:
             cfg.database_url = sqlite_url
@@ -303,6 +408,8 @@ def main() -> None:
         # Multiple clients can scan in parallel when using PostgreSQL — each
         # client writes to isolated rows so there are no write conflicts.
         # SQLite (local or GCS-backed) allows only one writer: run sequentially.
+        # In dispatched Cloud Run mode each task already has exactly one client,
+        # so this branch is only reached for in-process parallelism (PostgreSQL).
         use_parallel = (
             len(clients) > 1
             and not configs[0].database_url.startswith("sqlite")
@@ -360,7 +467,7 @@ def main() -> None:
             client["db"].close()
         if cfg0.state_backend == "gcs":
             from . import gcs_backend
-            gcs_backend.upload(cfg0.state_gcs_bucket, cfg0.state_gcs_prefix,
+            gcs_backend.upload(cfg0.state_gcs_bucket, gcs_prefix,
                                "/tmp/monitor.db", gcs_generation)
         sys.exit(0)
 
@@ -378,7 +485,7 @@ def main() -> None:
             client["db"].close()
         if cfg0.state_backend == "gcs":
             from . import gcs_backend
-            gcs_backend.upload(cfg0.state_gcs_bucket, cfg0.state_gcs_prefix,
+            gcs_backend.upload(cfg0.state_gcs_bucket, gcs_prefix,
                                "/tmp/monitor.db", gcs_generation)
         logger.info("Network monitor shut down cleanly")
         sys.exit(0)

@@ -122,7 +122,7 @@ class TestFromYamlClients:
         configs = Config.from_yaml_clients(path)
         c = configs[0]
         # Check a few dataclass defaults are still in effect
-        assert c.nmap_arguments == "-sV --open -T4"
+        assert c.nmap_arguments == "-sV --open -T4 -Pn"
         assert c.banner_grab is True
         assert c.monitor_mode == "all"
 

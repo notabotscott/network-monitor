@@ -8,3 +8,9 @@ build/
 .env
 *.db
 /data/
+
+# Terraform
+infra/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfplan

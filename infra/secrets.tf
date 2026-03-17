@@ -13,8 +13,14 @@ resource "google_secret_manager_secret" "db_url" {
 # The DATABASE_URL is constructed from the SQL instance and the generated password.
 # Format: postgresql://user:pass@/dbname?host=/cloudsql/project:region:instance
 resource "google_secret_manager_secret_version" "db_url" {
-  secret = google_secret_manager_secret.db_url.id
+  secret      = google_secret_manager_secret.db_url.id
   secret_data = "postgresql://monitor:${random_password.db.result}@/monitor?host=/cloudsql/${var.project}:${var.region}:${google_sql_database_instance.main.name}"
+
+  lifecycle {
+    # Prevent unintended secret rotation on existing deployments.
+    # To rotate: terraform taint random_password.db && terraform apply
+    ignore_changes = [secret_data]
+  }
 }
 
 resource "google_secret_manager_secret" "slack_webhook" {

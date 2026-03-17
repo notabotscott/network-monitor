@@ -8,16 +8,16 @@ resource "google_sql_database_instance" "main" {
   region           = var.region
   database_version = "POSTGRES_16"
 
-  # Set to true before using in production to prevent accidental deletion.
-  deletion_protection = false
+  deletion_protection = true
 
   depends_on = [google_project_service.apis]
 
   settings {
-    tier      = "db-g1-small"
-    edition   = "ENTERPRISE"
-    disk_type = "PD_SSD"
-    disk_size = 10
+    tier            = "db-g1-small"
+    edition         = "ENTERPRISE"
+    disk_type       = "PD_SSD"
+    disk_size       = 10
+    disk_autoresize = false
 
     availability_type = "ZONAL"
 
@@ -46,4 +46,10 @@ resource "google_sql_user" "monitor" {
   name     = "monitor"
   instance = google_sql_database_instance.main.name
   password = random_password.db.result
+
+  lifecycle {
+    # Prevent unintended password rotation on existing deployments.
+    # To rotate: terraform taint random_password.db && terraform apply
+    ignore_changes = [password]
+  }
 }

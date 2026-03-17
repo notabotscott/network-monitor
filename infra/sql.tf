@@ -11,6 +11,8 @@ resource "google_sql_database_instance" "main" {
   # Set to true before using in production to prevent accidental deletion.
   deletion_protection = false
 
+  depends_on = [google_project_service.apis]
+
   settings {
     tier      = "db-g1-small"
     edition   = "ENTERPRISE"

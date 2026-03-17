@@ -48,6 +48,7 @@ resource "google_cloudfunctions2_function" "slack_notifier" {
   }
 
   depends_on = [
+    google_project_service.apis,
     google_secret_manager_secret_iam_member.slack_webhook_accessor,
   ]
 }

@@ -2,6 +2,8 @@ resource "google_compute_network" "main" {
   name                    = "network-monitor"
   auto_create_subnetworks = false
   routing_mode            = "REGIONAL"
+
+  depends_on = [google_project_service.apis]
 }
 
 resource "google_compute_subnetwork" "main" {

@@ -10,6 +10,8 @@ resource "google_cloud_run_v2_job" "monitor" {
       execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
 
       containers {
+        # bootstrap.sh pushes the real image before this resource is created.
+        # After that, the deploy workflow keeps :latest up to date.
         image = "${var.region}-docker.pkg.dev/${var.project}/${google_artifact_registry_repository.main.repository_id}/network-monitor:latest"
 
         resources {
@@ -81,6 +83,7 @@ resource "google_cloud_run_v2_job" "monitor" {
   }
 
   depends_on = [
+    google_project_service.apis,
     google_secret_manager_secret_version.db_url,
     google_secret_manager_secret_iam_member.db_url_accessor,
     google_project_iam_member.cloudsql_client,

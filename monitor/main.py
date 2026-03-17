@@ -286,6 +286,19 @@ def main() -> None:
                     exc_info=True,
                     extra={"client_id": cfg.client_id},
                 )
+                # Emit a SCAN_FAILED change event so the log sink routes it
+                # to Pub/Sub → Slack via the same pipeline as change events.
+                logger.critical(
+                    "SCAN_FAILED: %s",
+                    exc,
+                    extra={
+                        "change_type": "SCAN_FAILED",
+                        "severity": "critical",
+                        "client_id": cfg.client_id,
+                        "target": ",".join(cfg.targets),
+                        "error": str(exc),
+                    },
+                )
                 if configs[0].run_mode == "job":
                     for c in clients:
                         c["db"].close()

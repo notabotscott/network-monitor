@@ -14,9 +14,9 @@ resource "google_monitoring_notification_channel" "pubsub" {
 # Grant Cloud Monitoring permission to publish incident notifications to the topic.
 # depends_on the channel so the service account exists before we try to bind it.
 resource "google_pubsub_topic_iam_member" "monitoring_publisher" {
-  topic  = google_pubsub_topic.changes.name
-  role   = "roles/pubsub.publisher"
-  member = "serviceAccount:service-${var.project_number}@gcp-sa-monitoring-notification.iam.gserviceaccount.com"
+  topic      = google_pubsub_topic.changes.name
+  role       = "roles/pubsub.publisher"
+  member     = "serviceAccount:service-${var.project_number}@gcp-sa-monitoring-notification.iam.gserviceaccount.com"
   depends_on = [google_monitoring_notification_channel.pubsub]
 }
 

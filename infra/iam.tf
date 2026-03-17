@@ -50,7 +50,15 @@ resource "google_project_iam_member" "storage_object_admin" {
   member  = local.monitor_sa
 }
 
-# Terraform CI needs these to plan/apply infrastructure changes
+# Terraform CI needs these to plan/apply infrastructure changes.
+# roles/editor covers most GCP service CRUD; the admin roles below fill gaps
+# that editor intentionally excludes (IAM, secrets, WIF).
+resource "google_project_iam_member" "editor" {
+  project = var.project
+  role    = "roles/editor"
+  member  = local.monitor_sa
+}
+
 resource "google_project_iam_member" "serviceusage_admin" {
   project = var.project
   role    = "roles/serviceusage.serviceUsageAdmin"
@@ -60,6 +68,18 @@ resource "google_project_iam_member" "serviceusage_admin" {
 resource "google_project_iam_member" "project_iam_admin" {
   project = var.project
   role    = "roles/resourcemanager.projectIamAdmin"
+  member  = local.monitor_sa
+}
+
+resource "google_project_iam_member" "secretmanager_admin" {
+  project = var.project
+  role    = "roles/secretmanager.admin"
+  member  = local.monitor_sa
+}
+
+resource "google_project_iam_member" "workload_identity_pool_admin" {
+  project = var.project
+  role    = "roles/iam.workloadIdentityPoolAdmin"
   member  = local.monitor_sa
 }
 

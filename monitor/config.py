@@ -42,6 +42,10 @@ class Config:
     banner_grab_timeout: float = 4.0   # seconds per port; keep short — client-speaks-first
     banner_grab_max_bytes: int = 512   # bytes to read from each connection
 
+    # Post-scan parallelism: banner grab + HTTP probe run concurrently across
+    # this many hosts simultaneously after nmap finishes.
+    post_scan_workers: int = 20
+
     # State backend: "local" or "gcs"
     state_backend: str = "local"
     state_local_dir: str = "/data/state"
@@ -188,6 +192,7 @@ def _apply_env_overrides(raw: dict) -> dict:
         "MONITOR_HTTP_MAX_REDIRECTS":    "http_max_redirects",
         "MONITOR_SCAN_INTERVAL_SECONDS": "scan_interval_seconds",
         "MONITOR_BANNER_GRAB_MAX_BYTES": "banner_grab_max_bytes",
+        "MONITOR_POST_SCAN_WORKERS":     "post_scan_workers",
     }
     float_overrides = {
         "MONITOR_BANNER_GRAB_TIMEOUT": "banner_grab_timeout",

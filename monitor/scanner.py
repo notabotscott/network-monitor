@@ -225,7 +225,9 @@ class Scanner:
             logger.error("nmap scan failed: %s", exc)
             raise
 
-        results: Dict[str, HostState] = {}
+        # Parse nmap results into (host_ip, hostnames, ports) tuples first,
+        # then run banner grabbing and HTTP probing concurrently across hosts.
+        live_hosts = []
         for host_ip in self._nm.all_hosts():
             host_data = self._nm[host_ip]
             if host_data.state() != "up":
@@ -248,12 +250,19 @@ class Scanner:
                         banner=port_data.get("script", {}).get("banner", ""),
                     )
 
+            live_hosts.append((host_ip, hostnames, ports))
+
+        def _post_process(args: tuple) -> HostState:
+            host_ip, hostnames, ports = args
             if self._cfg.banner_grab:
                 self._grab_banners(host_ip, ports)
-
             http_headers = self._probe_http(host_ip, ports)
-
-            results[host_ip] = HostState(
+            logger.debug(
+                "Scanned host %s: %d open ports",
+                host_ip,
+                sum(1 for p in ports.values() if p.state == "open"),
+            )
+            return HostState(
                 ip=host_ip,
                 hostnames=hostnames,
                 timestamp=time.time(),
@@ -261,11 +270,12 @@ class Scanner:
                 http_headers=http_headers,
                 is_up=True,
             )
-            logger.debug(
-                "Scanned host %s: %d open ports",
-                host_ip,
-                sum(1 for p in ports.values() if p.state == "open"),
-            )
+
+        results: Dict[str, HostState] = {}
+        max_workers = min(len(live_hosts), self._cfg.post_scan_workers) if live_hosts else 1
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            for state in pool.map(_post_process, live_hosts):
+                results[state.ip] = state
 
         logger.info(
             "Scan complete",

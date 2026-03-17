@@ -1,0 +1,77 @@
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+
+env:
+  PROJECT: internal-automation-385014
+  REGION: us-east1
+  IMAGE: us-east1-docker.pkg.dev/internal-automation-385014/network-monitor/network-monitor
+  JOB: network-monitor
+  FUNCTION: network-monitor-slack
+  FUNCTION_SOURCE: slack-notifier
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/123251553865/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: network-monitor@internal-automation-385014.iam.gserviceaccount.com
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and push Docker image
+        run: |
+          gcloud builds submit \
+            --tag "$IMAGE:$GITHUB_SHA" \
+            --tag "$IMAGE:latest" \
+            --project=$PROJECT \
+            --region=$REGION
+
+      - name: Update Cloud Run Job
+        run: |
+          gcloud run jobs update $JOB \
+            --image "$IMAGE:$GITHUB_SHA" \
+            --region $REGION \
+            --project $PROJECT
+
+      - name: Deploy Cloud Function
+        run: |
+          gcloud functions deploy $FUNCTION \
+            --gen2 \
+            --region=$REGION \
+            --runtime=python312 \
+            --source=$FUNCTION_SOURCE \
+            --entry-point=notify_slack \
+            --trigger-topic=network-monitor-changes \
+            --service-account=network-monitor@${PROJECT}.iam.gserviceaccount.com \
+            --project=$PROJECT

@@ -83,6 +83,19 @@ resource "google_project_iam_member" "workload_identity_pool_admin" {
   member  = local.monitor_sa
 }
 
+# roles/editor excludes resource-level IAM policy management
+resource "google_project_iam_member" "pubsub_admin" {
+  project = var.project
+  role    = "roles/pubsub.admin"
+  member  = local.monitor_sa
+}
+
+resource "google_project_iam_member" "service_account_admin" {
+  project = var.project
+  role    = "roles/iam.serviceAccountAdmin"
+  member  = local.monitor_sa
+}
+
 # Secret-level access
 resource "google_secret_manager_secret_iam_member" "db_url_accessor" {
   secret_id = google_secret_manager_secret.db_url.secret_id

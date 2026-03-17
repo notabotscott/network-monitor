@@ -50,6 +50,19 @@ resource "google_project_iam_member" "storage_object_admin" {
   member  = local.monitor_sa
 }
 
+# Terraform CI needs these to plan/apply infrastructure changes
+resource "google_project_iam_member" "serviceusage_admin" {
+  project = var.project
+  role    = "roles/serviceusage.serviceUsageAdmin"
+  member  = local.monitor_sa
+}
+
+resource "google_project_iam_member" "project_iam_admin" {
+  project = var.project
+  role    = "roles/resourcemanager.projectIamAdmin"
+  member  = local.monitor_sa
+}
+
 # Secret-level access
 resource "google_secret_manager_secret_iam_member" "db_url_accessor" {
   secret_id = google_secret_manager_secret.db_url.secret_id

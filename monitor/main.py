@@ -130,6 +130,7 @@ def diff_phase(
     db.write_change_events(scan_id, all_events)
 
     for event in all_events:
+        event.client_id = config.client_id
         _emit_event(event)
 
     if not all_events and not config.log_changes_only:

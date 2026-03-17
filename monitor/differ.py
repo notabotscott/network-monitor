@@ -27,6 +27,7 @@ class ChangeEvent:
     host_ip: str
     change_type: str
     severity: str
+    client_id: str = ""
     port: Optional[str] = None      # e.g. "443/tcp" or "443/https"
     previous: Optional[str] = None  # human-readable previous value
     current: Optional[str] = None   # human-readable current value
@@ -39,6 +40,7 @@ class ChangeEvent:
             "host_ip": self.host_ip,
             "change_type": self.change_type,
             "severity": self.severity,
+            "client_id": self.client_id,
             "port": self.port,
             "previous": self.previous,
             "current": self.current,
@@ -230,6 +232,8 @@ class Differ:
             curr_hdrs = current.http_headers.get(label, {})
 
             for hdr in sorted(set(prev_hdrs) | set(curr_hdrs)):
+                if hdr.startswith("_"):
+                    continue  # skip internal tracking keys (e.g. _status_code)
                 pv = prev_hdrs.get(hdr)
                 cv = curr_hdrs.get(hdr)
                 if pv != cv:
